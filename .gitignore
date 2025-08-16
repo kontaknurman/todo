@@ -1,0 +1,39 @@
+# .gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# But include example
+!.env.example
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+error_log
+access_log
+
+# Uploads
+uploads/
+!uploads/.gitkeep
+
+# Cache
+cache/
+tmp/
+
+# Vendor (if using Composer)
+vendor/
+
+# Backup files
+*.bak
+*.backup
+*.sql
