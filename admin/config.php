@@ -1,9 +1,11 @@
 <?php
-// admin/config.php - Simplified admin configuration
-require_once '../config.php';
+// admin/config.php - Updated admin configuration
+require_once dirname(__DIR__) . '/config.php';
 
-// Admin session prefix
-define('ADMIN_SESSION_PREFIX', 'admin_');
+// Admin-specific environment variables
+define('ADMIN_SESSION_PREFIX', env('ADMIN_SESSION_PREFIX', 'admin_'));
+define('ADMIN_MAX_LOGIN_ATTEMPTS', (int)env('ADMIN_MAX_LOGIN_ATTEMPTS', 5));
+define('ADMIN_LOCKOUT_TIME', (int)env('ADMIN_LOCKOUT_TIME', 900)); // 15 minutes
 
 // Check if admin is logged in
 function isAdminLoggedIn() {
