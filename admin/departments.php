@@ -3,6 +3,18 @@
 require_once 'config.php';
 requireAdminLogin();
 
+// Check if coming from a project
+$from_project_id = $_GET['project_id'] ?? null;
+$from_project_name = $_GET['project_name'] ?? null;
+$return_project = $_GET['return_project'] ?? null;
+$action = $_GET['action'] ?? '';
+$dept_id = $_GET['id'] ?? null;
+
+// If action is create and from project, show create modal with project pre-selected
+$show_create_modal = ($action === 'create' && $from_project_id);
+$show_edit_modal = ($action === 'edit' && $dept_id);
+$show_members_modal = ($action === 'members' && $dept_id);
+
 // Both admins and managers can manage departments
 if ($_SESSION[ADMIN_SESSION_PREFIX . 'role'] !== 'admin' && $_SESSION[ADMIN_SESSION_PREFIX . 'role'] !== 'manager') {
     $_SESSION['error'] = 'Access denied';
@@ -165,7 +177,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
         }
     }
-    header('Location: departments.php');
+    
+    // After successful operation
+    $return_project = $_POST['return_project'] ?? null;
+    if ($return_project) {
+        header('Location: project_details.php?id=' . $return_project . '#departments-tab');
+    } else {
+        header('Location: departments.php');
+    }
     exit;
 }
 
@@ -543,6 +562,80 @@ logAdminActivity('view_departments');
     
     function closeMembersModal() {
         document.getElementById('membersModal').classList.add('hidden');
+    }
+    </script>
+    
+    <!-- Add this script at the bottom of departments.php -->
+    <script>
+    <?php if ($show_create_modal): ?>
+    // Auto-open create modal if coming from project
+    document.addEventListener('DOMContentLoaded', function() {
+        openCreateModal();
+        
+        // Pre-select the project if provided
+        <?php if ($from_project_id): ?>
+        document.getElementById('projectId').value = '<?php echo $from_project_id; ?>';
+        
+        // Update modal title to show project context
+        document.getElementById('modalTitle').innerHTML = 
+            'Create New Department for <?php echo htmlspecialchars($from_project_name); ?>';
+        <?php endif; ?>
+    });
+    <?php endif; ?>
+    
+    <?php if ($show_edit_modal): ?>
+    // Auto-open edit modal
+    document.addEventListener('DOMContentLoaded', function() {
+        <?php
+        // Get department data
+        $stmt = $pdo->prepare("SELECT * FROM departments WHERE id = ?");
+        $stmt->execute([$dept_id]);
+        $dept = $stmt->fetch();
+        ?>
+        editDepartment(<?php echo json_encode($dept); ?>);
+    });
+    <?php endif; ?>
+    
+    <?php if ($show_members_modal): ?>
+    // Auto-open members modal
+    document.addEventListener('DOMContentLoaded', function() {
+        <?php
+        $stmt = $pdo->prepare("SELECT department_name FROM departments WHERE id = ?");
+        $stmt->execute([$dept_id]);
+        $dept = $stmt->fetch();
+        ?>
+        manageMembers(<?php echo $dept_id; ?>, "<?php echo htmlspecialchars($dept['department_name']); ?>");
+    });
+    <?php endif; ?>
+    
+    // Add back button if coming from project
+    <?php if ($return_project): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add back to project button
+        const header = document.querySelector('.px-6.py-4.border-b');
+        if (header) {
+            const backBtn = document.createElement('a');
+            backBtn.href = 'project_details.php?id=<?php echo $return_project; ?>#departments-tab';
+            backBtn.className = 'bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 mr-2';
+            backBtn.innerHTML = '<i class="fas fa-arrow-left mr-2"></i>Back to Project';
+            header.querySelector('.flex').insertBefore(backBtn, header.querySelector('.flex').firstChild);
+        }
+    });
+    <?php endif; ?>
+    
+    // Update form submission to redirect back to project if needed
+    const originalFormSubmit = document.querySelector('#departmentModal form');
+    if (originalFormSubmit) {
+        originalFormSubmit.addEventListener('submit', function(e) {
+            <?php if ($return_project): ?>
+            // Add hidden field to redirect back to project
+            const returnField = document.createElement('input');
+            returnField.type = 'hidden';
+            returnField.name = 'return_project';
+            returnField.value = '<?php echo $return_project; ?>';
+            this.appendChild(returnField);
+            <?php endif; ?>
+        });
     }
     </script>
 </body>
