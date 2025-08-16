@@ -133,13 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="text-xs text-gray-500 mt-1">Sales Department</div>
                 </div>
-                <div class="bg-white p-3 rounded border border-gray-200">
-                    <div class="font-mono text-gray-700">
-                        <strong>Email:</strong> alice@company.com<br>
-                        <strong>Password:</strong> password123
-                    </div>
-                    <div class="text-xs text-gray-500 mt-1">HR Department</div>
-                </div>
             </div>
         </div>
         
