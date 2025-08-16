@@ -1,7 +1,11 @@
 <?php
-// admin/login.php - Fixed admin login without CSRF issues
+// admin/login.php - Fixed version with error handling
 session_start();
 require_once '../config.php';
+
+// Error reporting disabled for production
+// ini_set('display_errors', 1);
+// error_reporting(E_ALL);
 
 // Admin session prefix
 define('ADMIN_SESSION_PREFIX', 'admin_');
@@ -13,54 +17,160 @@ if (isset($_SESSION[ADMIN_SESSION_PREFIX . 'id'])) {
 }
 
 $error = '';
+$login_attempts_exceeded = false;
+
+// Function to check if table exists
+function tableExists($pdo, $tableName) {
+    try {
+        $result = $pdo->query("SHOW TABLES LIKE '$tableName'");
+        return $result->rowCount() > 0;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+// Function to create admin_settings table if it doesn't exist
+function createAdminSettingsTable($pdo) {
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS admin_settings (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                admin_id int(11) NOT NULL UNIQUE,
+                dashboard_layout varchar(50) DEFAULT 'default',
+                items_per_page int(11) DEFAULT 20,
+                email_notifications boolean DEFAULT TRUE,
+                whatsapp_notifications boolean DEFAULT FALSE,
+                theme varchar(20) DEFAULT 'light',
+                language varchar(10) DEFAULT 'en',
+                two_factor_enabled boolean DEFAULT FALSE,
+                two_factor_secret varchar(255) DEFAULT NULL,
+                last_login datetime DEFAULT NULL,
+                last_ip varchar(45) DEFAULT NULL,
+                login_attempts int(11) DEFAULT 0,
+                locked_until datetime DEFAULT NULL,
+                api_key varchar(255) DEFAULT NULL,
+                permissions JSON DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (id),
+                KEY idx_admin (admin_id),
+                CONSTRAINT fk_settings_admin FOREIGN KEY (admin_id) REFERENCES employees (id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        ");
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+// Function to create admin_logs table if it doesn't exist
+function createAdminLogsTable($pdo) {
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS admin_logs (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                admin_id int(11) DEFAULT NULL,
+                action varchar(100) NOT NULL,
+                target_type varchar(50) DEFAULT NULL,
+                target_id int(11) DEFAULT NULL,
+                details text DEFAULT NULL,
+                ip_address varchar(45) DEFAULT NULL,
+                user_agent text DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (id),
+                KEY idx_admin (admin_id),
+                KEY idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        ");
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = filter_input(INPUT_POST, 'email', FILTER_VALIDATE_EMAIL);
     $password = $_POST['password'] ?? '';
     
     if ($email && $password) {
-        $pdo = getDB();
-        
-        // Check for admin or manager
-        $stmt = $pdo->prepare("
-            SELECT * FROM employees 
-            WHERE email = ? AND role IN ('admin', 'manager')
-        ");
-        $stmt->execute([$email]);
-        $admin = $stmt->fetch();
-        
-        if ($admin) {
-            // For testing/demo - accept both hashed and plain password
-            $validPassword = false;
+        try {
+            $pdo = getDB();
             
-            // First try password_verify for hashed passwords
-            if (!empty($admin['password']) && password_verify($password, $admin['password'])) {
-                $validPassword = true;
+            // Create tables if they don't exist
+            if (!tableExists($pdo, 'admin_settings')) {
+                createAdminSettingsTable($pdo);
             }
-            // Fallback for demo accounts
-            elseif ($password === 'admin123' && in_array($email, ['admin@company.com', 'manager@company.com'])) {
-                // Update to proper hash for next time
-                $hashedPassword = password_hash('admin123', PASSWORD_DEFAULT);
-                $updateStmt = $pdo->prepare("UPDATE employees SET password = ? WHERE id = ?");
-                $updateStmt->execute([$hashedPassword, $admin['id']]);
-                $validPassword = true;
+            if (!tableExists($pdo, 'admin_logs')) {
+                createAdminLogsTable($pdo);
             }
             
-            if ($validPassword) {
-                // Set admin session
-                $_SESSION[ADMIN_SESSION_PREFIX . 'id'] = $admin['id'];
-                $_SESSION[ADMIN_SESSION_PREFIX . 'name'] = $admin['name'];
-                $_SESSION[ADMIN_SESSION_PREFIX . 'role'] = $admin['role'];
-                $_SESSION[ADMIN_SESSION_PREFIX . 'email'] = $admin['email'];
+            // Simple query first - just check if admin exists
+            $stmt = $pdo->prepare("
+                SELECT * FROM employees 
+                WHERE email = ? AND role IN ('admin', 'manager')
+            ");
+            $stmt->execute([$email]);
+            $admin = $stmt->fetch();
+            
+            if ($admin) {
+                // Check password
+                $validPassword = false;
                 
-                // Redirect to dashboard
-                header('Location: dashboard.php');
-                exit;
+                if (!empty($admin['password']) && password_verify($password, $admin['password'])) {
+                    $validPassword = true;
+                }
+
+                
+                if ($validPassword) {
+                    // Set admin session
+                    $_SESSION[ADMIN_SESSION_PREFIX . 'id'] = $admin['id'];
+                    $_SESSION[ADMIN_SESSION_PREFIX . 'name'] = $admin['name'];
+                    $_SESSION[ADMIN_SESSION_PREFIX . 'role'] = $admin['role'];
+                    $_SESSION[ADMIN_SESSION_PREFIX . 'email'] = $admin['email'];
+                    
+                    // Try to update admin settings (but don't fail if table doesn't exist)
+                    try {
+                        $updateSettings = $pdo->prepare("
+                            INSERT INTO admin_settings (admin_id, last_login, last_ip, login_attempts) 
+                            VALUES (?, NOW(), ?, 0)
+                            ON DUPLICATE KEY UPDATE 
+                                last_login = NOW(), 
+                                last_ip = ?, 
+                                login_attempts = 0
+                        ");
+                        $ip = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+                        $updateSettings->execute([$admin['id'], $ip, $ip]);
+                    } catch (Exception $e) {
+                        // Settings table doesn't exist, but login is still valid
+                    }
+                    
+                    // Try to log the login (but don't fail if table doesn't exist)
+                    try {
+                        $logStmt = $pdo->prepare("
+                            INSERT INTO admin_logs (admin_id, action, details, ip_address)
+                            VALUES (?, 'admin_login', 'Successful admin login', ?)
+                        ");
+                        $logStmt->execute([
+                            $admin['id'],
+                            $_SERVER['REMOTE_ADDR'] ?? 'Unknown'
+                        ]);
+                    } catch (Exception $e) {
+                        // Logs table doesn't exist, but login is still valid
+                    }
+                    
+                    // Redirect to dashboard
+                    header('Location: dashboard.php');
+                    exit;
+                } else {
+                    $error = 'Invalid password';
+                }
             } else {
-                $error = 'Invalid password';
+                $error = 'Invalid credentials or insufficient privileges. Only admins and managers can access this area.';
             }
-        } else {
-            $error = 'Invalid credentials or insufficient privileges. Only admins and managers can access this area.';
+        } catch (PDOException $e) {
+            $error = 'Database error: ' . $e->getMessage();
+        } catch (Exception $e) {
+            $error = 'System error: ' . $e->getMessage();
         }
     } else {
         $error = 'Please enter valid email and password';
@@ -124,22 +234,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <span class="text-gray-500">
                     <i class="fas fa-shield-alt mr-1"></i> Secured Area
                 </span>
-            </div>
-        </div>
-        
-        <div class="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-            <p class="text-sm font-semibold text-yellow-800 mb-2">Demo Admin Accounts:</p>
-            <div class="text-xs text-yellow-700 space-y-1">
-                <div class="bg-white p-2 rounded">
-                    <strong>Super Admin:</strong><br>
-                    Email: admin@company.com<br>
-                    Password: admin123
-                </div>
-                <div class="bg-white p-2 rounded">
-                    <strong>Manager:</strong><br>
-                    Email: manager@company.com<br>
-                    Password: admin123
-                </div>
             </div>
         </div>
     </div>

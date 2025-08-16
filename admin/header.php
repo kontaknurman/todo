@@ -1,5 +1,5 @@
 <?php
-// admin/header.php - Admin navigation header
+// admin/header.php - Updated Admin navigation header with Projects and Departments
 if (!isAdminLoggedIn()) {
     header('Location: login.php');
     exit;
@@ -20,6 +20,16 @@ if (!isAdminLoggedIn()) {
                     <?php if (hasPermission('employees', 'view')): ?>
                     <a href="employees.php" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition">
                         <i class="fas fa-users mr-1"></i> Employees
+                    </a>
+                    <?php endif; ?>
+                    <?php if ($_SESSION[ADMIN_SESSION_PREFIX . 'role'] === 'admin'): ?>
+                    <a href="projects.php" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition">
+                        <i class="fas fa-project-diagram mr-1"></i> Projects
+                    </a>
+                    <?php endif; ?>
+                    <?php if ($_SESSION[ADMIN_SESSION_PREFIX . 'role'] === 'admin' || $_SESSION[ADMIN_SESSION_PREFIX . 'role'] === 'manager'): ?>
+                    <a href="departments.php" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition">
+                        <i class="fas fa-building mr-1"></i> Departments
                     </a>
                     <?php endif; ?>
                     <?php if (hasPermission('tasks', 'view')): ?>
@@ -60,6 +70,16 @@ if (!isAdminLoggedIn()) {
         <?php if (hasPermission('employees', 'view')): ?>
         <a href="employees.php" class="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
             <i class="fas fa-users mr-2"></i> Employees
+        </a>
+        <?php endif; ?>
+        <?php if ($_SESSION[ADMIN_SESSION_PREFIX . 'role'] === 'admin'): ?>
+        <a href="projects.php" class="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
+            <i class="fas fa-project-diagram mr-2"></i> Projects
+        </a>
+        <?php endif; ?>
+        <?php if ($_SESSION[ADMIN_SESSION_PREFIX . 'role'] === 'admin' || $_SESSION[ADMIN_SESSION_PREFIX . 'role'] === 'manager'): ?>
+        <a href="departments.php" class="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
+            <i class="fas fa-building mr-2"></i> Departments
         </a>
         <?php endif; ?>
         <?php if (hasPermission('tasks', 'view')): ?>
